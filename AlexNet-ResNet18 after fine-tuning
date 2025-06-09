@@ -1,0 +1,110 @@
+from google.colab import drive
+drive.mount('/content/drive')
+
+
+
+!cp /content/drive/MyDrive/colabprog2/archive.zip .
+!unzip -q -o archive.zip -d butterfly_dataset
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchvision import datasets, transforms, models
+from torch.utils.data import DataLoader
+import os
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406],
+                         [0.229, 0.224, 0.225])
+])
+
+
+data_dir = 'butterfly_dataset'  # Correct base path
+train_dir = os.path.join(data_dir, 'train')
+val_dir = os.path.join(data_dir, 'valid')
+test_dir = os.path.join(data_dir, 'test')
+
+
+train_dataset = datasets.ImageFolder(train_dir, transform=transform)
+val_dataset = datasets.ImageFolder(val_dir, transform=transform)
+test_dataset = datasets.ImageFolder(test_dir, transform=transform)
+
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
+num_classes = len(train_dataset.classes)
+print(f"Number of classes: {num_classes}")
+
+
+
+# Fine-tune AlexNet or ResNet18
+def fine_tune_model(model_name):
+    if model_name == "alexnet":
+        model = models.alexnet(pretrained=True)
+        model.classifier[6] = nn.Linear(4096, num_classes)
+    elif model_name == "resnet18":
+        model = models.resnet18(pretrained=True)
+        model.fc = nn.Linear(model.fc.in_features, num_classes)
+    else:
+        raise ValueError("Only 'alexnet' or 'resnet18' are supported.")
+
+    model = model.to(device)
+
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    num_epochs = 3
+
+    for epoch in range(num_epochs):
+        model.train()
+        total_loss = 0
+        correct = 0
+        total = 0
+
+        for images, labels in train_loader:
+            images = images.to(device)
+            labels = labels.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(images)
+            loss = loss_fn(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
+            _, preds = torch.max(outputs, 1)
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+
+        train_acc = correct / total
+        print(f"{model_name.upper()} | Epoch {epoch+1}/{num_epochs} | Loss: {total_loss:.4f} | Train Accuracy: {train_acc:.4f}")
+
+    # Evaluate on test set
+    model.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for images, labels in test_loader:
+            images = images.to(device)
+            labels = labels.to(device)
+            outputs = model(images)
+            _, preds = torch.max(outputs, 1)
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+
+    test_acc = correct / total
+    print(f"\n✅ {model_name.upper()} Final Test Accuracy: {test_acc:.4f}")
+
+
+# Run both models
+fine_tune_model("alexnet")
+fine_tune_model("resnet18")
+
+
+
+
+
+
+
